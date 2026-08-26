@@ -415,7 +415,7 @@
 
         const selectedMandi = mandiSelect.value;
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', file, file.name || "snapshot.jpg");
 
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> Segmenting & Analyzing Defects...';
@@ -426,11 +426,14 @@
                 body: formData
             });
 
-            if (!res.ok) throw new Error("Processing failed.");
+            if (!res.ok) {
+                const errJson = await res.json().catch(() => ({ detail: "Server error during assessment." }));
+                throw new Error(errJson.detail || "Processing failed.");
+            }
             const data = await res.json();
             renderResults(data);
         } catch (err) {
-            alert("Error: " + err.message);
+            alert("Assessment Notice: " + err.message);
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="fa-solid fa-microscope me-2"></i> Run AI Computer Vision Assessment';
@@ -445,7 +448,6 @@
             annotatedOverlay.src = 'data:image/png;base64,' + data.annotated_image_base64;
         }
 
-        // Handle 'No Produce Detected' status
         if (data.items_count === 0 || data.overall_batch_grade === "No Produce Detected") {
             mainGradeBadge.className = "grade-badge-huge bg-grade-NoProduceDetected";
             mainGradeBadge.innerText = "NO PRODUCE DETECTED";
@@ -469,7 +471,6 @@
         mainGradeBadge.className = `grade-badge-huge bg-grade-${gClass}`;
         mainGradeBadge.innerText = data.overall_batch_grade;
 
-        // Handle Expected Price display when rejected vs valid produce
         if (gClass === 'Reject' || data.estimated_mandi_price_inr === 0.0) {
             mandiPrice.className = "mandi-badge-rejected fs-6 mt-1 d-inline-block";
             mandiPrice.innerText = "N/A (Unfit for Market)";
@@ -515,23 +516,31 @@
     webcamBtn.addEventListener('click', async () => {
         if (!stream) {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" } });
                 webcamVideo.srcObject = stream;
                 webcamVideo.classList.remove('d-none');
                 webcamBtn.innerHTML = '<i class="fa-solid fa-camera me-2"></i> Take Snap & Grade';
             } catch (err) {
-                alert("Camera access denied or unavailable.");
+                alert("Camera access denied or unavailable: " + err.message);
             }
         } else {
+            if (!webcamVideo.videoWidth || !webcamVideo.videoHeight) {
+                alert("Webcam video feed is loading. Please try again in a moment.");
+                return;
+            }
             webcamCanvas.width = webcamVideo.videoWidth;
             webcamCanvas.height = webcamVideo.videoHeight;
             const ctx = webcamCanvas.getContext('2d');
-            ctx.drawImage(webcamVideo, 0, 0);
+            ctx.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
 
             webcamCanvas.toBlob(async (blob) => {
-                const file = new File([blob], "webcam_snap.png", { type: "image/png" });
+                if (!blob || blob.size === 0) {
+                    alert("Failed to capture webcam snapshot. Please try again.");
+                    return;
+                }
+                const file = new File([blob], "webcam_snap.jpg", { type: "image/jpeg" });
                 await processImageFile(file);
-            }, 'image/png');
+            }, 'image/jpeg', 0.95);
         }
     });
 </script>
