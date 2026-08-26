@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AGMARK Automated Onion Quality Assessment & AI Price Trend Forecaster</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        .hero-banner {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
+            border-bottom: 1px solid #3730a3;
+            padding: 2.2rem 0;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        .card-custom {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            margin-bottom: 1.5rem;
+        }
+        .grade-badge-huge {
+            font-size: 1.8rem;
+            font-weight: 800;
+            padding: 0.65rem 1.8rem;
+            border-radius: 50px;
+            display: inline-block;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .bg-grade-GradeA { background-color: #10b981; color: #ffffff; box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); }
+        .bg-grade-GradeB { background-color: #f59e0b; color: #000000; box-shadow: 0 0 20px rgba(245, 158, 11, 0.4); }
+        .bg-grade-SmallGrade { background-color: #06b6d4; color: #000000; box-shadow: 0 0 20px rgba(6, 182, 212, 0.4); }
+        .bg-grade-Reject { background-color: #ef4444; color: #ffffff; box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); }
+        .bg-grade-Mixed { background-color: #f97316; color: #ffffff; box-shadow: 0 0 20px rgba(249, 115, 22, 0.4); }
+        .bg-grade-NoProduceDetected { background-color: #475569; color: #cbd5e1; box-shadow: none; }
+        
+        .vision-preview {
+            width: 100%;
+            max-height: 380px;
+            border-radius: 12px;
+            object-fit: contain;
+            background-color: #090d16;
+            border: 2px solid #334155;
+        }
+        .metric-card {
+            background-color: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .metric-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #38bdf8;
+        }
+        .metric-title {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .defect-pill {
+            background-color: #334155;
+            border-radius: 6px;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+        }
+        .mandi-badge {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            color: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+        .mandi-badge-rejected {
+            background: linear-gradient(135deg, #991b1b 0%, #dc2626 100%);
+            color: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+        .source-info-box {
+            background-color: #0f172a;
+            border-left: 4px solid #38bdf8;
+            padding: 0.85rem 1.1rem;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+        .advice-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid #38bdf8;
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="hero-banner text-center">
+    <div class="container">
+        <h1 class="fw-bold mb-2">🧅 AGMARK AI Quality & Price Trend Forecaster</h1>
+        <p class="text-indigo-200 mb-0"><span class="badge bg-primary">SIH Winning Feature</span> Real-Time Computer Vision • AGMARK Metrics • AI 14-Day Price Predictor</p>
+    </div>
+</div>
+
+<div class="container mt-4 mb-5">
+    <div class="row">
+        <!-- Input Controls -->
+        <div class="col-lg-5">
+            <div class="card-custom p-4">
+                <h4 class="mb-3"><i class="fa-solid fa-camera text-primary me-2"></i> Image & Live Feed Inspection</h4>
+                
+                <form id="uploadForm">
+                    <div class="mb-3">
+                        <label class="form-label text-slate-300">Upload Produce Image</label>
+                        <input type="file" id="imageFile" class="form-control bg-dark text-light border-secondary" accept="image/*" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-slate-300">Camera Distance Calibration Preset</label>
+                        <select id="distancePreset" class="form-select bg-dark text-light border-secondary mb-2">
+                            <option value="2.5">📷 Standard Desk Camera (~30cm) [2.5 px/mm]</option>
+                            <option value="4.5">🔍 Close-Up Inspection (~15cm) [4.5 px/mm]</option>
+                            <option value="1.2">🔭 Overhead Conveyor / Crate (~60cm) [1.2 px/mm]</option>
+                            <option value="custom">⚙️ Custom Manual Calibration</option>
+                        </select>
+                        
+                        <div id="customCalibBox" class="d-none mt-2">
+                            <label class="form-label small text-muted">Custom Factor ($\text{pixels / mm}$)</label>
+                            <input type="number" step="0.1" id="calibrationPx" class="form-control form-control-sm bg-dark text-light border-secondary" value="2.5">
+                        </div>
+                    </div>
+
+                    <button type="submit" id="submitBtn" class="btn btn-primary btn-lg w-100 fw-bold shadow">
+                        <i class="fa-solid fa-microscope me-2"></i> Run AI Computer Vision Assessment
+                    </button>
+                </form>
+
+                <hr class="border-secondary my-4">
+
+                <div class="text-center">
+                    <h6 class="text-muted mb-3">Live Video Stream Simulation</h6>
+                    <button id="webcamBtn" class="btn btn-outline-info w-100">
+                        <i class="fa-solid fa-video me-2"></i> Capture Live Frame from Webcam
+                    </button>
+                    <video id="webcamVideo" class="w-100 mt-2 rounded d-none" autoplay playsinline></video>
+                    <canvas id="webcamCanvas" class="d-none"></canvas>
+                </div>
+            </div>
+
+            <!-- Official AGMARK Size Reference Standards Card -->
+            <div class="card-custom p-4">
+                <h5 class="mb-3 text-warning"><i class="fa-solid fa-ruler-combined me-2"></i> Official AGMARK Size Standards Data</h5>
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm table-bordered text-center mb-0 small">
+                        <thead>
+                            <tr class="table-secondary text-dark">
+                                <th>Grade</th>
+                                <th>Diameter Range</th>
+                                <th>Commercial Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="badge bg-success">Grade A</span></td>
+                                <td><strong>&ge; 55 mm</strong> (5.5 cm+)</td>
+                                <td>Large / Export Grade</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge bg-warning text-dark">Grade B</span></td>
+                                <td><strong>40 - 55 mm</strong> (4 - 5.5 cm)</td>
+                                <td>Medium / Wholesale</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge bg-info text-dark">Small</span></td>
+                                <td><strong>30 - 40 mm</strong> (3 - 4 cm)</td>
+                                <td>Sambar / Pickle Size</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge bg-danger">Reject</span></td>
+                                <td><strong>&lt; 30 mm</strong> (&lt; 3 cm)</td>
+                                <td>Factory Dehydration</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Mandi Price Source Information Card -->
+            <div class="card-custom p-4">
+                <h5 class="mb-3 text-info"><i class="fa-solid fa-building-columns me-2"></i> Mandi Price Source & Benchmarks</h5>
+                <div class="source-info-box mb-3">
+                    <i class="fa-solid fa-building-columns text-primary me-2"></i> <strong>Source:</strong> Agmarknet (Ministry of Agriculture & Farmers Welfare, Govt. of India) Daily Wholesale Mandi Price Index.
+                </div>
+                <ul class="list-unstyled text-slate-300 small mb-0">
+                    <li class="mb-2"><span class="badge bg-success me-2">Grade A</span> <strong>100% Modal Price</strong>: Premium Export Grade (>55mm, uniform skin, 0% rot)</li>
+                    <li class="mb-2"><span class="badge bg-warning text-dark me-2">Grade B</span> <strong>65% Modal Price</strong>: Standard Domestic Wholesale (40-55mm, minor defect)</li>
+                    <li class="mb-2"><span class="badge bg-info text-dark me-2">Small</span> <strong>45% Modal Price</strong>: Sambar / Pickle Wholesale Grade (30-40mm)</li>
+                    <li><span class="badge bg-danger me-2">Reject</span> <strong>No Commercial Price (₹0.0)</strong>: Unfit for retail market</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Output Analytics & Price Trend Forecasting -->
+        <div class="col-lg-7">
+            <div class="card-custom p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="mb-0 text-success"><i class="fa-solid fa-chart-line me-2"></i> Live Mandi Price & 14-Day AI Forecast</h4>
+                    <select id="mandiSelect" class="form-select form-select-sm bg-dark text-info border-secondary" style="width: auto;">
+                        <option value="Lasalgaon (Nashik, MH)">Lasalgaon (Nashik, MH)</option>
+                        <option value="Azadpur (Delhi)">Azadpur (Delhi)</option>
+                        <option value="Pune (MH)">Pune (MH)</option>
+                        <option value="Bengaluru (KA)">Bengaluru (KA)</option>
+                        <option value="Kurnool (AP)">Kurnool (AP)</option>
+                    </select>
+                </div>
+
+                <div style="height: 240px; position: relative;" class="mb-3">
+                    <canvas id="priceChart"></canvas>
+                </div>
+
+                <div class="advice-card mt-2">
+                    <div class="d-flex align-items-center">
+                        <i class="fa-solid fa-lightbulb text-warning fa-2x me-3"></i>
+                        <div>
+                            <span class="badge bg-info text-dark mb-1" id="trendBadge">Market Forecast</span>
+                            <div class="fw-bold text-light" id="adviceText">Loading market recommendation...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-custom p-4">
+                <h4 class="mb-3"><i class="fa-solid fa-display text-info me-2"></i> Real-Time AI Computer Vision Output</h4>
+
+                <div id="emptyState" class="text-center py-5 text-muted">
+                    <i class="fa-solid fa-box-open fa-3x mb-3 text-secondary"></i>
+                    <h5>No Produce Analyzed Yet</h5>
+                    <p class="small">Upload an image or capture a live webcam frame to trigger AI vision segmentation and AGMARK grading.</p>
+                </div>
+
+                <div id="resultsContent" class="d-none">
+                    <div class="mb-4 text-center">
+                        <h6 class="text-slate-400 mb-2">Computer Vision Bounding & Defect Overlay</h6>
+                        <img id="annotatedOverlay" class="vision-preview" alt="Computer Vision Segmentation Overlay">
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-4 bg-dark p-3 rounded-4 border border-secondary">
+                        <div>
+                            <span class="text-muted small uppercase d-block">Batch Assessment</span>
+                            <div id="mainGradeBadge" class="grade-badge-huge mt-1">Grade A</div>
+                        </div>
+                        <div class="text-end">
+                            <span class="text-muted small uppercase d-block"><i class="fa-solid fa-tag me-1 text-success"></i> Expected Price</span>
+                            <span id="mandiPrice" class="mandi-badge fs-4 mt-1 d-inline-block">₹40.0 / kg</span>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-4">
+                            <div class="metric-card">
+                                <div id="avgDiameter" class="metric-number">58.5 mm</div>
+                                <div class="metric-title">Avg Max Diameter</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="metric-card">
+                                <div id="itemCount" class="metric-number">1</div>
+                                <div class="metric-title">Items Segmented</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="metric-card">
+                                <div id="primaryDefect" class="metric-number text-warning" style="font-size: 1.1rem; padding-top: 0.3rem;">None</div>
+                                <div class="metric-title">Primary Defect</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h6 class="text-slate-300 mb-3"><i class="fa-solid fa-list-check me-2"></i> Per-Item AGMARK Inspection Log</h6>
+                    <div id="itemListContainer">
+                        <!-- Rendered dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const uploadForm = document.getElementById('uploadForm');
+    const imageFile = document.getElementById('imageFile');
+    const distancePreset = document.getElementById('distancePreset');
+    const customCalibBox = document.getElementById('customCalibBox');
+    const calibrationPx = document.getElementById('calibrationPx');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    const emptyState = document.getElementById('emptyState');
+    const resultsContent = document.getElementById('resultsContent');
+    const annotatedOverlay = document.getElementById('annotatedOverlay');
+    const mainGradeBadge = document.getElementById('mainGradeBadge');
+    const mandiPrice = document.getElementById('mandiPrice');
+    const avgDiameter = document.getElementById('avgDiameter');
+    const itemCount = document.getElementById('itemCount');
+    const primaryDefect = document.getElementById('primaryDefect');
+    const itemListContainer = document.getElementById('itemListContainer');
+
+    const mandiSelect = document.getElementById('mandiSelect');
+    const trendBadge = document.getElementById('trendBadge');
+    const adviceText = document.getElementById('adviceText');
+
+    const webcamBtn = document.getElementById('webcamBtn');
+    const webcamVideo = document.getElementById('webcamVideo');
+    const webcamCanvas = document.getElementById('webcamCanvas');
+    let stream = null;
+    let priceChart = null;
+
+    distancePreset.addEventListener('change', () => {
+        if (distancePreset.value === 'custom') {
+            customCalibBox.classList.remove('d-none');
+        } else {
+            customCalibBox.classList.add('d-none');
+            calibrationPx.value = distancePreset.value;
+        }
+    });
+
+    window.addEventListener('load', () => {
+        loadMarketTrends(mandiSelect.value);
+    });
+
+    mandiSelect.addEventListener('change', () => {
+        loadMarketTrends(mandiSelect.value);
+    });
+
+    async function loadMarketTrends(mandiName) {
+        try {
+            const res = await fetch(`/market_trends?mandi_name=${encodeURIComponent(mandiName)}`);
+            if (!res.ok) return;
+            const data = await res.json();
+
+            trendBadge.innerText = data.trend_direction;
+            adviceText.innerText = data.smart_storage_recommendation;
+
+            renderPriceChart(data.historical_dates, data.historical_prices, data.forecast_dates, data.forecast_prices);
+        } catch (e) {
+            console.error("Failed to load market analytics", e);
+        }
+    }
+
+    function renderPriceChart(histDates, histPrices, forecastDates, forecastPrices) {
+        const ctx = document.getElementById('priceChart').getContext('2d');
+        const labels = [...histDates, ...forecastDates];
+        const historicalData = [...histPrices, ...Array(forecastPrices.length).fill(null)];
+        const forecastData = [...Array(histPrices.length - 1).fill(null), histPrices[histPrices.length - 1], ...forecastPrices];
+
+        if (priceChart) priceChart.destroy();
+
+        priceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Historical Daily Mandi Price (₹/kg)',
+                        data: historicalData,
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: '14-Day AI Forecast Price (₹/kg)',
+                        data: forecastData,
+                        borderColor: '#10b981',
+                        borderDash: [6, 6],
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#cbd5e1', font: { size: 11 } } } },
+                scales: {
+                    x: { ticks: { color: '#64748b', maxRotation: 45, font: { size: 9 } }, grid: { color: '#1e293b' } },
+                    y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } }
+                }
+            }
+        });
+    }
+
+    uploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const file = imageFile.files[0];
+        if (!file) return;
+
+        await processImageFile(file);
+    });
+
+    async function processImageFile(file) {
+        let calib = parseFloat(distancePreset.value);
+        if (distancePreset.value === 'custom') {
+            calib = parseFloat(calibrationPx.value);
+        }
+        if (isNaN(calib) || calib <= 0) calib = 2.5;
+
+        const selectedMandi = mandiSelect.value;
+        const formData = new FormData();
+        formData.append('file', file, file.name || "snapshot.jpg");
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> Segmenting & Analyzing Defects...';
+
+        try {
+            const res = await fetch(`/grade_image?pixels_per_mm=${calib}&mandi_name=${encodeURIComponent(selectedMandi)}`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!res.ok) {
+                const errJson = await res.json().catch(() => ({ detail: "Server error during assessment." }));
+                throw new Error(errJson.detail || "Processing failed.");
+            }
+            const data = await res.json();
+            renderResults(data);
+        } catch (err) {
+            alert("Assessment Notice: " + err.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fa-solid fa-microscope me-2"></i> Run AI Computer Vision Assessment';
+        }
+    }
+
+    function renderResults(data) {
+        emptyState.classList.add('d-none');
+        resultsContent.classList.remove('d-none');
+
+        if (data.annotated_image_base64) {
+            annotatedOverlay.src = 'data:image/png;base64,' + data.annotated_image_base64;
+        }
+
+        if (data.items_count === 0 || data.overall_batch_grade === "No Produce Detected") {
+            mainGradeBadge.className = "grade-badge-huge bg-grade-NoProduceDetected";
+            mainGradeBadge.innerText = "NO PRODUCE DETECTED";
+            mandiPrice.className = "mandi-badge-rejected fs-6 mt-1 d-inline-block";
+            mandiPrice.innerText = "N/A";
+            avgDiameter.innerText = "0.0 mm";
+            itemCount.innerText = "0";
+            primaryDefect.innerText = "None";
+            itemListContainer.innerHTML = '<div class="alert alert-secondary text-center">No valid onion or produce item detected in frame. Please place a produce item in camera view.</div>';
+            return;
+        }
+
+        const gRaw = data.overall_batch_grade;
+        let gClass = 'GradeA';
+        if (gRaw.includes('Grade A')) gClass = 'GradeA';
+        else if (gRaw.includes('Grade B')) gClass = 'GradeB';
+        else if (gRaw.includes('Small')) gClass = 'SmallGrade';
+        else if (gRaw.includes('Mixed')) gClass = 'Mixed';
+        else if (gRaw.includes('Reject')) gClass = 'Reject';
+
+        mainGradeBadge.className = `grade-badge-huge bg-grade-${gClass}`;
+        mainGradeBadge.innerText = data.overall_batch_grade;
+
+        if (gClass === 'Reject' || data.estimated_mandi_price_inr === 0.0) {
+            mandiPrice.className = "mandi-badge-rejected fs-6 mt-1 d-inline-block";
+            mandiPrice.innerText = "N/A (Unfit for Market)";
+        } else {
+            mandiPrice.className = "mandi-badge fs-4 mt-1 d-inline-block";
+            mandiPrice.innerText = `₹${data.estimated_mandi_price_inr.toFixed(1)} / kg`;
+        }
+
+        avgDiameter.innerText = `${data.average_diameter_mm.toFixed(1)} mm`;
+        itemCount.innerText = data.items_count;
+
+        let itemsHtml = '';
+        let highestDefect = "None";
+
+        data.results.forEach(item => {
+            if (item.defects.primary_defect !== "None" && !item.defects.primary_defect.includes("Sound")) {
+                highestDefect = item.defects.primary_defect;
+            }
+
+            const badgeColor = item.grade === 'Grade A' ? 'bg-success' : item.grade === 'Grade B' ? 'bg-warning text-dark' : item.grade === 'Small Grade' ? 'bg-info text-dark' : 'bg-danger';
+
+            itemsHtml += `
+                <div class="card-custom p-3 mb-2 bg-dark">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong class="text-info">Item #${item.item_id}</strong>
+                        <span class="badge ${badgeColor} fs-6">${item.grade}</span>
+                    </div>
+                    <p class="small text-slate-400 mb-2">${item.agmark_standard}</p>
+                    <div class="row text-center g-2 mt-1">
+                        <div class="col-3"><div class="defect-pill"><b>${item.metrics.diameter_mm}</b> mm</div></div>
+                        <div class="col-3"><div class="defect-pill"><b>${item.metrics.area_cm2}</b> cm²</div></div>
+                        <div class="col-3"><div class="defect-pill text-danger">Rot: <b>${item.defects.rot_percentage}%</b></div></div>
+                        <div class="col-3"><div class="defect-pill text-success">Color: <b>${(item.defects.color_score*100).toFixed(0)}%</b></div></div>
+                    </div>
+                </div>
+            `;
+        });
+
+        primaryDefect.innerText = highestDefect;
+        itemListContainer.innerHTML = itemsHtml;
+    }
+
+    webcamBtn.addEventListener('click', async () => {
+        if (!stream) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" } });
+                webcamVideo.srcObject = stream;
+                webcamVideo.classList.remove('d-none');
+                webcamBtn.innerHTML = '<i class="fa-solid fa-camera me-2"></i> Take Snap & Grade';
+            } catch (err) {
+                alert("Camera access denied or unavailable: " + err.message);
+            }
+        } else {
+            if (!webcamVideo.videoWidth || !webcamVideo.videoHeight) {
+                alert("Webcam video feed is loading. Please try again in a moment.");
+                return;
+            }
+            webcamCanvas.width = webcamVideo.videoWidth;
+            webcamCanvas.height = webcamVideo.videoHeight;
+            const ctx = webcamCanvas.getContext('2d');
+            ctx.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
+
+            webcamCanvas.toBlob(async (blob) => {
+                if (!blob || blob.size === 0) {
+                    alert("Failed to capture webcam snapshot. Please try again.");
+                    return;
+                }
+                const file = new File([blob], "webcam_snap.jpg", { type: "image/jpeg" });
+                await processImageFile(file);
+            }, 'image/jpeg', 0.95);
+        }
+    });
+</script>
+</body>
+</html>
