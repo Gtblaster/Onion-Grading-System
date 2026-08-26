@@ -16,7 +16,7 @@ from src.market_analytics import MandiPricePredictor
 app = FastAPI(
     title="AGMARK Compliant Onion Quality Assessment & Dynamic Market Engine",
     description="AI Computer Vision & Quality Analytics API for Agricultural Produce (Onions).",
-    version="2.6.0"
+    version="2.7.0"
 )
 
 detector = OnionDetectorStub()
@@ -85,13 +85,22 @@ def get_market_trends(mandi_name: str = "Lasalgaon (Nashik, MH)"):
 
 
 @app.post("/grade_image", response_model=ComprehensiveGradingResponse)
-async def grade_image(file: UploadFile = File(...), pixels_per_mm: float = 2.5, mandi_name: str = "Lasalgaon (Nashik, MH)"):
+async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, mandi_name: str = "Lasalgaon (Nashik, MH)"):
     """
     Processes produce image / webcam frame: Performs CLAHE normalization, HSV segmentation, YOLOv8/OpenCV item detection, 
     surface rot/sprout HSV defect extraction, AGMARK millimeter classification, and calculates dynamic daily Mandi prices.
-    Safe against webcam snapshots, human faces, and low-resolution frames.
+    Safe against invalid calibration numbers, webcam snapshots, human faces, and low-resolution frames.
     """
+    # Safe float conversion for pixels_per_mm
+    try:
+        pixels_per_mm_val = float(pixels_per_mm)
+        if pixels_per_mm_val <= 0 or np.isnan(pixels_per_mm_val):
+            pixels_per_mm_val = 2.5
+    except Exception:
+        pixels_per_mm_val = 2.5
+
     price_source = f"Agmarknet Live ({mandi_name} Index)"
+
     try:
         contents = await file.read()
         if not contents or len(contents) < 50:
@@ -129,7 +138,6 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: float = 2.5, 
         )
 
     try:
-        # Fetch today's live modal price dynamically from Market Analytics Engine
         market_analytics = market_predictor.get_market_analytics(mandi_name)
         today_modal_price = market_analytics.get("today_modal_price_inr", 40.0)
         price_source = f"Agmarknet Live ({mandi_name} Index - Today's Modal Price: ₹{today_modal_price}/kg)"
@@ -147,7 +155,7 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: float = 2.5, 
         total_diam = 0.0
         prices = []
 
-        local_classifier = OnionAGMARKClassifier(pixels_per_mm=pixels_per_mm)
+        local_classifier = OnionAGMARKClassifier(pixels_per_mm=pixels_per_mm_val)
         img_h, img_w = img.shape[:2]
 
         for item in detected_items:
@@ -266,13 +274,16 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: float = 2.5, 
 
 
 if __name__ == "__main__":
-    print("Testing API Exception Handling & Robustness...")
+    print("Testing API Safe Calibration Parameter Parsing...")
     from fastapi.testclient import TestClient
     client = TestClient(app)
 
-    # Test empty payload
-    res = client.post("/grade_image", files={"file": ("empty.png", b"", "image/png")})
+    # Test invalid string or NaN calibration
+    dummy_img = np.zeros((400, 400, 3), dtype=np.uint8)
+    cv2.circle(dummy_img, (200, 200), 70, (40, 60, 180), -1)
+    _, img_bytes = cv2.imencode('.png', dummy_img)
+
+    res = client.post("/grade_image?pixels_per_mm=invalid_string", files={"file": ("test.png", img_bytes.tobytes(), "image/png")})
     assert res.status_code == 200
     data = res.json()
-    assert data["overall_batch_grade"] == "No Produce Detected"
-    print("Empty webcam payload handled safely.")
+    print("Invalid calibration parameter handled safely (overall grade:", data["overall_batch_grade"], ")")

@@ -410,8 +410,11 @@
     });
 
     async function processImageFile(file) {
-        let calib = distancePreset.value;
-        if (calib === 'custom') calib = calibrationPx.value || 2.5;
+        let calib = parseFloat(distancePreset.value);
+        if (distancePreset.value === 'custom') {
+            calib = parseFloat(calibrationPx.value);
+        }
+        if (isNaN(calib) || calib <= 0) calib = 2.5;
 
         const selectedMandi = mandiSelect.value;
         const formData = new FormData();
