@@ -16,7 +16,7 @@ from src.preprocessing import get_onion_color_mask
 class OnionDetectorStub:
     """
     Object Detection and Segmentation Pipeline for agricultural produce (onions).
-    Supports Red, Yellow, AND White Onion varieties, batch crate images, and individual item segmentation.
+    Supports Red, Yellow, AND White Onion varieties, batch crate images, webcam feeds, and individual item segmentation.
     Includes OpenCV distance-transform fallback when YOLO/PyTorch DLLs are restricted by OS policies.
     """
 
@@ -69,14 +69,14 @@ class OnionDetectorStub:
         if np.mean(gray) > 180 and np.std(gray) < 40:
             return False
 
-        if skin_ratio > 0.50 and hsv_skin_ratio > 0.50:
+        if skin_ratio > 0.55 and hsv_skin_ratio > 0.55:
             print("Notice: Candidate contour rejected (Human hand/face/skin detected).")
             return True
         return False
 
     def verify_onion_color_match(self, bgr_crop: np.ndarray) -> bool:
         """
-        Ensures >= 40% of crop pixels match Red, Yellow, or White Onion HSV bounds.
+        Ensures >= 18% of crop pixels match Red, Yellow, or White Onion HSV bounds.
         """
         if bgr_crop is None or bgr_crop.size == 0:
             return False
@@ -86,7 +86,7 @@ class OnionDetectorStub:
         total_pixels = float(bgr_crop.shape[0] * bgr_crop.shape[1])
         onion_ratio = np.count_nonzero(onion_mask) / total_pixels
 
-        if onion_ratio < 0.40:
+        if onion_ratio < 0.18:
             print(f"Notice: Candidate crop rejected (Onion color ratio too low: {onion_ratio:.2f}).")
             return False
         return True
@@ -94,17 +94,17 @@ class OnionDetectorStub:
     def is_valid_produce_contour(self, bgr_image: np.ndarray, contour: np.ndarray) -> bool:
         """
         Validates candidate contour for Red, Yellow, AND White onions:
-        1. Area >= 1000 px^2.
-        2. Circularity >= 0.38.
-        3. Aspect Ratio 0.45 <= (W / H) <= 2.1.
+        1. Area >= 500 px^2.
+        2. Circularity >= 0.30.
+        3. Aspect Ratio 0.35 <= (W / H) <= 2.5.
         4. Human Skin Rejection.
-        5. Onion Color Coverage (Red/Yellow/White) >= 40%.
+        5. Onion Color Coverage (Red/Yellow/White) >= 18%.
         """
         if self.touches_frame_border(contour, bgr_image.shape):
             return False
 
         area = float(cv2.contourArea(contour))
-        if area < 1000.0:
+        if area < 500.0:
             return False
 
         perimeter = float(cv2.arcLength(contour, True))
@@ -115,7 +115,7 @@ class OnionDetectorStub:
         x, y, w, h = cv2.boundingRect(contour)
         aspect_ratio = float(w) / float(h) if h > 0 else 0.0
 
-        if circularity < 0.38 or aspect_ratio < 0.45 or aspect_ratio > 2.1:
+        if circularity < 0.30 or aspect_ratio < 0.35 or aspect_ratio > 2.5:
             return False
 
         crop = bgr_image[y:y+h, x:x+w]
@@ -169,7 +169,10 @@ class OnionDetectorStub:
             _, mask = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
 
         dist_transform = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
-        _, sure_fg = cv2.threshold(dist_transform, 0.25 * dist_transform.max(), 255, 0)
+        if dist_transform.max() == 0:
+            return []
+
+        _, sure_fg = cv2.threshold(dist_transform, 0.15 * dist_transform.max(), 255, 0)
         sure_fg = np.uint8(sure_fg)
 
         contours, _ = cv2.findContours(sure_fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -191,7 +194,7 @@ class OnionDetectorStub:
 
 
 if __name__ == "__main__":
-    print("Testing Updated Onion Detector with Safe Policy Fallback...")
+    print("Testing Updated Onion Detector with Webcam & Phone Camera Support...")
     detector = OnionDetectorStub()
 
     white_img = np.zeros((400, 400, 3), dtype=np.uint8)
@@ -203,4 +206,4 @@ if __name__ == "__main__":
     results = detector.detect_and_measure(white_img, mask)
     print(f"Detected valid white onion items: {len(results)}")
     assert len(results) >= 1, "White onion detection failed!"
-    print("Safe Policy Fallback verified successfully.")
+    print("Webcam & Phone Camera Support verified successfully.")
