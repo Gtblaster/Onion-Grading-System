@@ -16,8 +16,7 @@ from src.preprocessing import get_onion_color_mask
 class OnionDetectorStub:
     """
     Object Detection and Segmentation Pipeline for agricultural produce (onions).
-    Supports Red, Yellow, AND White Onion varieties, batch crate images, webcam feeds, and individual item segmentation.
-    Includes OpenCV distance-transform fallback when YOLO/PyTorch DLLs are restricted by OS policies.
+    Supports Red, Yellow, AND White Onion varieties, outdoor field photos, batch crates, webcams, and individual item segmentation.
     """
 
     def __init__(self, model_weights: str = "yolov8n-seg.pt"):
@@ -33,20 +32,22 @@ class OnionDetectorStub:
             print(f"Notice: YOLOv8 model loading notice ({e}). Operating with contour segmentation mode.")
             self.model = None
 
-    def touches_frame_border(self, contour: np.ndarray, img_shape: Tuple[int, int], border_margin: int = 5) -> bool:
+    def touches_frame_border(self, contour: np.ndarray, img_shape: Tuple[int, int]) -> bool:
         """
-        Only rejects contours touching the border if they are extreme outer frame edges and not part of a batch crate.
+        Only rejects contours touching the border if they cover the entire outer frame boundary (e.g. background soil).
+        Allows individual onions sitting near or touching image edges.
         """
         x, y, w, h = cv2.boundingRect(contour)
         img_h, img_w = img_shape[:2]
 
-        if w >= (img_w * 0.95) or h >= (img_h * 0.95):
+        if w >= (img_w * 0.92) or h >= (img_h * 0.92):
             return True
         return False
 
     def is_human_hand_or_skin(self, bgr_crop: np.ndarray) -> bool:
         """
         Detects human skin/faces/hands using YCrCb & HSV skin thresholds.
+        Excludes red onions (which have low Cb <= 125, high Cr >= 160).
         """
         if bgr_crop is None or bgr_crop.size == 0:
             return True
@@ -65,18 +66,20 @@ class OnionDetectorStub:
         skin_ratio = np.count_nonzero(skin_mask) / total_pixels
         hsv_skin_ratio = np.count_nonzero(hsv_skin_mask) / total_pixels
 
-        gray = cv2.cvtColor(bgr_crop, cv2.COLOR_BGR2GRAY)
-        if np.mean(gray) > 180 and np.std(gray) < 40:
+        # Red onion safeguard (Red onions have high saturation in red hue range)
+        onion_color_mask = get_onion_color_mask(hsv)
+        onion_ratio = np.count_nonzero(onion_color_mask) / total_pixels
+        if onion_ratio > 0.40:
             return False
 
-        if skin_ratio > 0.55 and hsv_skin_ratio > 0.55:
+        if skin_ratio > 0.60 and hsv_skin_ratio > 0.60:
             print("Notice: Candidate contour rejected (Human hand/face/skin detected).")
             return True
         return False
 
     def verify_onion_color_match(self, bgr_crop: np.ndarray) -> bool:
         """
-        Ensures >= 18% of crop pixels match Red, Yellow, or White Onion HSV bounds.
+        Ensures >= 20% of crop pixels match Red, Yellow, or White Onion HSV bounds.
         """
         if bgr_crop is None or bgr_crop.size == 0:
             return False
@@ -86,7 +89,7 @@ class OnionDetectorStub:
         total_pixels = float(bgr_crop.shape[0] * bgr_crop.shape[1])
         onion_ratio = np.count_nonzero(onion_mask) / total_pixels
 
-        if onion_ratio < 0.18:
+        if onion_ratio < 0.20:
             print(f"Notice: Candidate crop rejected (Onion color ratio too low: {onion_ratio:.2f}).")
             return False
         return True
@@ -94,17 +97,17 @@ class OnionDetectorStub:
     def is_valid_produce_contour(self, bgr_image: np.ndarray, contour: np.ndarray) -> bool:
         """
         Validates candidate contour for Red, Yellow, AND White onions:
-        1. Area >= 500 px^2.
-        2. Circularity >= 0.30.
-        3. Aspect Ratio 0.35 <= (W / H) <= 2.5.
+        1. Area >= 400 px^2.
+        2. Circularity >= 0.25.
+        3. Aspect Ratio 0.35 <= (W / H) <= 2.8.
         4. Human Skin Rejection.
-        5. Onion Color Coverage (Red/Yellow/White) >= 18%.
+        5. Onion Color Coverage (Red/Yellow/White) >= 20%.
         """
         if self.touches_frame_border(contour, bgr_image.shape):
             return False
 
         area = float(cv2.contourArea(contour))
-        if area < 500.0:
+        if area < 400.0:
             return False
 
         perimeter = float(cv2.arcLength(contour, True))
@@ -115,7 +118,7 @@ class OnionDetectorStub:
         x, y, w, h = cv2.boundingRect(contour)
         aspect_ratio = float(w) / float(h) if h > 0 else 0.0
 
-        if circularity < 0.30 or aspect_ratio < 0.35 or aspect_ratio > 2.5:
+        if circularity < 0.25 or aspect_ratio < 0.35 or aspect_ratio > 2.8:
             return False
 
         crop = bgr_image[y:y+h, x:x+w]
@@ -172,12 +175,15 @@ class OnionDetectorStub:
         if dist_transform.max() == 0:
             return []
 
-        _, sure_fg = cv2.threshold(dist_transform, 0.15 * dist_transform.max(), 255, 0)
+        # Distance transform seed thresholding for separating adjacent onions
+        _, sure_fg = cv2.threshold(dist_transform, 0.20 * dist_transform.max(), 255, 0)
         sure_fg = np.uint8(sure_fg)
 
         contours, _ = cv2.findContours(sure_fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         items = []
         item_id = 1
+
+        # If sure_fg found valid contours
         for cnt in contours:
             if self.is_valid_produce_contour(image, cnt):
                 area = float(cv2.contourArea(cnt))
@@ -190,20 +196,36 @@ class OnionDetectorStub:
                 })
                 item_id += 1
 
+        # Fallback to direct mask contours if distance transform seeds were too strict
+        if not items:
+            direct_contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in direct_contours:
+                if self.is_valid_produce_contour(image, cnt):
+                    area = float(cv2.contourArea(cnt))
+                    (_, _), radius = cv2.minEnclosingCircle(cnt)
+                    max_diameter = float(radius * 2.0)
+                    items.append({
+                        "item_id": item_id,
+                        "pixel_area": area,
+                        "max_diameter": max_diameter
+                    })
+                    item_id += 1
+
         return items
 
 
 if __name__ == "__main__":
-    print("Testing Updated Onion Detector with Webcam & Phone Camera Support...")
+    print("Testing Updated Onion Detector with Field Photo Support...")
     detector = OnionDetectorStub()
 
-    white_img = np.zeros((400, 400, 3), dtype=np.uint8)
-    cv2.circle(white_img, (200, 200), 70, (230, 240, 240), -1)
+    red_img = np.zeros((400, 400, 3), dtype=np.uint8)
+    cv2.circle(red_img, (150, 200), 70, (30, 20, 180), -1)
+    cv2.circle(red_img, (280, 200), 65, (30, 20, 180), -1)
 
-    gray = cv2.cvtColor(white_img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(red_img, cv2.COLOR_BGR2GRAY)
     _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
 
-    results = detector.detect_and_measure(white_img, mask)
-    print(f"Detected valid white onion items: {len(results)}")
-    assert len(results) >= 1, "White onion detection failed!"
-    print("Webcam & Phone Camera Support verified successfully.")
+    results = detector.detect_and_measure(red_img, mask)
+    print(f"Detected valid red onion items: {len(results)}")
+    assert len(results) >= 1, "Field red onion detection failed!"
+    print("Field Photo Support verified successfully.")
