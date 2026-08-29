@@ -57,25 +57,19 @@ onion_grading_system/
 
 ---
 
-## 🚀 Quickstart Guide
+## 🚀 Quickstart Guide (Local Desktop Run)
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/YOUR_USERNAME/onion_grading_system.git
-cd onion_grading_system
-```
-
-### 2. Install Dependencies
+### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Launch the Server
+### 2. Launch the Application Server
 ```bash
 python -m uvicorn src.api:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-### 4. Open in Browser
+### 3. Open in Browser
 Navigate to **`http://127.0.0.1:8000`** in your browser.
 
 ---
