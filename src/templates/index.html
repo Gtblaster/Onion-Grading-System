@@ -102,6 +102,21 @@
             border-radius: 12px;
             padding: 1rem 1.25rem;
         }
+        .auto-detect-badge {
+            font-size: 0.85rem;
+            font-weight: 700;
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            display: inline-block;
+        }
+        .pulse-active {
+            animation: pulse-green 1.5s infinite;
+        }
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
     </style>
 </head>
 <body>
@@ -109,7 +124,7 @@
 <div class="hero-banner text-center">
     <div class="container">
         <h1 class="fw-bold mb-2">🧅 AGMARK AI Quality & Price Trend Forecaster</h1>
-        <p class="text-indigo-200 mb-0"><span class="badge bg-primary">SIH Winning Feature</span> Real-Time Computer Vision • AGMARK Metrics • AI 14-Day Price Predictor</p>
+        <p class="text-indigo-200 mb-0"><span class="badge bg-primary">SIH Winning Feature</span> Real-Time Computer Vision • AGMARK Metrics • Auto-Detect Camera</p>
     </div>
 </div>
 
@@ -123,7 +138,7 @@
                 <form id="uploadForm">
                     <div class="mb-3">
                         <label class="form-label text-slate-300">Upload Produce Image</label>
-                        <input type="file" id="imageFile" class="form-control bg-dark text-light border-secondary" accept="image/*" required>
+                        <input type="file" id="imageFile" class="form-control bg-dark text-light border-secondary" accept="image/*">
                     </div>
 
                     <div class="mb-3">
@@ -148,12 +163,20 @@
 
                 <hr class="border-secondary my-4">
 
+                <!-- Real-Time Auto-Detect Camera Stream Section -->
                 <div class="text-center">
-                    <h6 class="text-muted mb-3">Live Video Stream Simulation</h6>
-                    <button id="webcamBtn" class="btn btn-outline-info w-100">
-                        <i class="fa-solid fa-video me-2"></i> Capture Live Frame from Webcam
+                    <h6 class="text-slate-300 mb-2"><i class="fa-solid fa-bolt text-warning me-2"></i> Real-Time Live Auto-Detect Camera</h6>
+                    <p class="small text-muted mb-3">Turn on camera to automatically detect produce and auto-grade in real-time when an onion is placed in front of the lens.</p>
+                    
+                    <button id="webcamBtn" class="btn btn-outline-info w-100 mb-2 fw-bold">
+                        <i class="fa-solid fa-video me-2"></i> Start Live Auto-Detect Camera
                     </button>
-                    <video id="webcamVideo" class="w-100 mt-2 rounded d-none" autoplay playsinline></video>
+
+                    <div id="autoDetectStatus" class="auto-detect-badge bg-secondary text-light d-none mb-2">
+                        <i class="fa-solid fa-circle-notch fa-spin me-1"></i> Camera Initializing...
+                    </div>
+
+                    <video id="webcamVideo" class="w-100 mt-2 rounded d-none border border-info" autoplay playsinline></video>
                     <canvas id="webcamCanvas" class="d-none"></canvas>
                 </div>
             </div>
@@ -246,7 +269,7 @@
                 <div id="emptyState" class="text-center py-5 text-muted">
                     <i class="fa-solid fa-box-open fa-3x mb-3 text-secondary"></i>
                     <h5>No Produce Analyzed Yet</h5>
-                    <p class="small">Upload an image or capture a live webcam frame to trigger AI vision segmentation and AGMARK grading.</p>
+                    <p class="small">Upload an image or start the Live Auto-Detect Camera to trigger automatic AI vision segmentation and AGMARK grading.</p>
                 </div>
 
                 <div id="resultsContent" class="d-none">
@@ -322,8 +345,13 @@
     const webcamBtn = document.getElementById('webcamBtn');
     const webcamVideo = document.getElementById('webcamVideo');
     const webcamCanvas = document.getElementById('webcamCanvas');
+    const autoDetectStatus = document.getElementById('autoDetectStatus');
+
     let stream = null;
     let priceChart = null;
+    let autoDetectInterval = null;
+    let isProcessingFrame = false;
+    let lastAutoCaptureTime = 0;
 
     distancePreset.addEventListener('change', () => {
         if (distancePreset.value === 'custom') {
@@ -420,8 +448,10 @@
         const formData = new FormData();
         formData.append('file', file, file.name || "snapshot.jpg");
 
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> Segmenting & Analyzing Defects...';
+        if (!isProcessingFrame) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> Segmenting & Analyzing Defects...';
+        }
 
         try {
             const res = await fetch(`/grade_image?pixels_per_mm=${calib}&mandi_name=${encodeURIComponent(selectedMandi)}`, {
@@ -436,7 +466,7 @@
             const data = await res.json();
             renderResults(data);
         } catch (err) {
-            alert("Assessment Notice: " + err.message);
+            console.warn("Assessment Notice: " + err.message);
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="fa-solid fa-microscope me-2"></i> Run AI Computer Vision Assessment';
@@ -448,7 +478,7 @@
         resultsContent.classList.remove('d-none');
 
         if (data.annotated_image_base64) {
-            annotatedOverlay.src = 'data:image/png;base64,' + data.annotated_image_base64;
+            annotatedOverlay.src = 'data:image/jpeg;base64,' + data.annotated_image_base64;
         }
 
         if (data.items_count === 0 || data.overall_batch_grade === "No Produce Detected") {
@@ -516,34 +546,97 @@
         itemListContainer.innerHTML = itemsHtml;
     }
 
+    // Fast On-Device Produce Detection Check for Live Webcam Stream
+    function checkFrameForOnionProduce(ctx, width, height) {
+        try {
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+            let onionPixelCount = 0;
+
+            // Sample every 4th pixel for high speed
+            for (let i = 0; i < data.length; i += 16) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+
+                // Red/Purple Onion (High Red, lower Green)
+                const isRedOnion = (r > 100 && r > g + 20 && r > b + 10);
+                // Yellow/Golden Onion (High Red and Green, low Blue)
+                const isYellowOnion = (r > 110 && g > 80 && b < 100 && r > b + 40);
+                // White Onion (High Brightness, low color difference)
+                const isWhiteOnion = (r > 160 && g > 160 && b > 160 && Math.abs(r - g) < 20);
+
+                if (isRedOnion || isYellowOnion || isWhiteOnion) {
+                    onionPixelCount++;
+                }
+            }
+
+            const totalSampled = data.length / 16;
+            const produceRatio = onionPixelCount / totalSampled;
+            return produceRatio > 0.12; // True if >= 12% of frame matches produce colors
+        } catch (e) {
+            return true; // Fallback to trigger assessment
+        }
+    }
+
+    // Toggle Real-Time Auto-Detect Camera
     webcamBtn.addEventListener('click', async () => {
         if (!stream) {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" } });
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" } 
+                });
                 webcamVideo.srcObject = stream;
                 webcamVideo.classList.remove('d-none');
-                webcamBtn.innerHTML = '<i class="fa-solid fa-camera me-2"></i> Take Snap & Grade';
+                autoDetectStatus.classList.remove('d-none');
+                autoDetectStatus.className = "auto-detect-badge bg-success text-white pulse-active mb-2";
+                autoDetectStatus.innerHTML = '<i class="fa-solid fa-eye me-1"></i> LIVE AUTO-DETECT ACTIVE: SCANNING FOR ONION...';
+                webcamBtn.className = "btn btn-danger w-100 mb-2 fw-bold";
+                webcamBtn.innerHTML = '<i class="fa-solid fa-power-off me-2"></i> Stop Live Auto-Detect Camera';
+
+                // Start continuous live stream detection loop (checks every 300ms)
+                autoDetectInterval = setInterval(async () => {
+                    const now = Date.now();
+                    if (isProcessingFrame || (now - lastAutoCaptureTime < 1500)) return;
+
+                    if (webcamVideo.videoWidth > 0 && webcamVideo.videoHeight > 0) {
+                        webcamCanvas.width = webcamVideo.videoWidth;
+                        webcamCanvas.height = webcamVideo.videoHeight;
+                        const ctx = webcamCanvas.getContext('2d');
+                        ctx.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
+
+                        const hasOnion = checkFrameForOnionProduce(ctx, webcamCanvas.width, webcamCanvas.height);
+                        if (hasOnion) {
+                            isProcessingFrame = true;
+                            lastAutoCaptureTime = Date.now();
+                            autoDetectStatus.className = "auto-detect-badge bg-warning text-dark mb-2";
+                            autoDetectStatus.innerHTML = '<i class="fa-solid fa-bolt me-1"></i> ONION IN FRONT OF CAMERA! AUTO-GRADING...';
+
+                            webcamCanvas.toBlob(async (blob) => {
+                                if (blob && blob.size > 0) {
+                                    const file = new File([blob], "live_autodetect.jpg", { type: "image/jpeg" });
+                                    await processImageFile(file);
+                                }
+                                isProcessingFrame = false;
+                                autoDetectStatus.className = "auto-detect-badge bg-success text-white pulse-active mb-2";
+                                autoDetectStatus.innerHTML = '<i class="fa-solid fa-eye me-1"></i> LIVE AUTO-DETECT ACTIVE: SCANNING FOR ONION...';
+                            }, 'image/jpeg', 0.85);
+                        }
+                    }
+                }, 300);
+
             } catch (err) {
                 alert("Camera access denied or unavailable: " + err.message);
             }
         } else {
-            if (!webcamVideo.videoWidth || !webcamVideo.videoHeight) {
-                alert("Webcam video feed is loading. Please try again in a moment.");
-                return;
-            }
-            webcamCanvas.width = webcamVideo.videoWidth;
-            webcamCanvas.height = webcamVideo.videoHeight;
-            const ctx = webcamCanvas.getContext('2d');
-            ctx.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
-
-            webcamCanvas.toBlob(async (blob) => {
-                if (!blob || blob.size === 0) {
-                    alert("Failed to capture webcam snapshot. Please try again.");
-                    return;
-                }
-                const file = new File([blob], "webcam_snap.jpg", { type: "image/jpeg" });
-                await processImageFile(file);
-            }, 'image/jpeg', 0.95);
+            // Stop camera and detection loop
+            if (autoDetectInterval) clearInterval(autoDetectInterval);
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            stream = null;
+            webcamVideo.classList.add('d-none');
+            autoDetectStatus.classList.add('d-none');
+            webcamBtn.className = "btn btn-outline-info w-100 mb-2 fw-bold";
+            webcamBtn.innerHTML = '<i class="fa-solid fa-video me-2"></i> Start Live Auto-Detect Camera';
         }
     });
 </script>
