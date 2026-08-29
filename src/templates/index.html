@@ -552,19 +552,27 @@
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
             let onionPixelCount = 0;
+            let humanSkinCount = 0;
 
-            // Sample every 4th pixel for high speed
+            // Sample every 16th pixel for high speed
             for (let i = 0; i < data.length; i += 16) {
                 const r = data[i];
                 const g = data[i + 1];
                 const b = data[i + 2];
 
-                // Red/Purple Onion (High Red, lower Green)
-                const isRedOnion = (r > 100 && r > g + 20 && r > b + 10);
-                // Yellow/Golden Onion (High Red and Green, low Blue)
-                const isYellowOnion = (r > 110 && g > 80 && b < 100 && r > b + 40);
-                // White Onion (High Brightness, low color difference)
-                const isWhiteOnion = (r > 160 && g > 160 && b > 160 && Math.abs(r - g) < 20);
+                // Detect Human Skin (R > G > B, typical skin tones)
+                const isSkin = (r > 130 && g > 80 && g < 160 && b > 50 && b < 130 && r > g && g > b && (r - g) > 15);
+                if (isSkin) {
+                    humanSkinCount++;
+                    continue;
+                }
+
+                // Glossy Red/Purple Onion (High Red, lower Green)
+                const isRedOnion = (r > 130 && r > g + 40 && r > b + 25);
+                // Yellow/Golden Onion (High Red & Green, low Blue)
+                const isYellowOnion = (r > 140 && g > 100 && b < 90 && (r - g) < 55 && (r - b) > 50);
+                // White/Ivory Onion (High Brightness, low color diff)
+                const isWhiteOnion = (r > 190 && g > 190 && b > 190 && Math.abs(r - g) < 15 && Math.abs(r - b) < 15);
 
                 if (isRedOnion || isYellowOnion || isWhiteOnion) {
                     onionPixelCount++;
@@ -572,10 +580,15 @@
             }
 
             const totalSampled = data.length / 16;
+            const skinRatio = humanSkinCount / totalSampled;
             const produceRatio = onionPixelCount / totalSampled;
-            return produceRatio > 0.12; // True if >= 12% of frame matches produce colors
+
+            // Reject if human skin dominates (> 25% of frame)
+            if (skinRatio > 0.25) return false;
+
+            return produceRatio > 0.16;
         } catch (e) {
-            return true; // Fallback to trigger assessment
+            return false;
         }
     }
 
