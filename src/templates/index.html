@@ -109,6 +109,15 @@
             border-radius: 20px;
             display: inline-block;
         }
+        .active-learning-badge {
+            background: linear-gradient(135deg, #312e81 0%, #4338ca 100%);
+            color: #e0e7ff;
+            border: 1px solid #6366f1;
+            border-radius: 10px;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
         .pulse-active {
             animation: pulse-green 1.5s infinite;
         }
@@ -124,7 +133,7 @@
 <div class="hero-banner text-center">
     <div class="container">
         <h1 class="fw-bold mb-2">🧅 AGMARK AI Quality & Price Trend Forecaster</h1>
-        <p class="text-indigo-200 mb-0"><span class="badge bg-primary">SIH Winning Feature</span> Real-Time Computer Vision • AGMARK Metrics • Auto-Detect Camera</p>
+        <p class="text-indigo-200 mb-0"><span class="badge bg-primary">SIH Winning Feature</span> Real-Time Computer Vision • AGMARK Metrics • Active Learning Retraining</p>
     </div>
 </div>
 
@@ -264,7 +273,12 @@
             </div>
 
             <div class="card-custom p-4">
-                <h4 class="mb-3"><i class="fa-solid fa-display text-info me-2"></i> Real-Time AI Computer Vision Output</h4>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="mb-0 text-info"><i class="fa-solid fa-display me-2"></i> Real-Time AI Computer Vision Output</h4>
+                    <div id="activeLearningBadge" class="active-learning-badge d-none">
+                        <i class="fa-solid fa-brain me-1 text-warning"></i> AI Model Learning Active
+                    </div>
+                </div>
 
                 <div id="emptyState" class="text-center py-5 text-muted">
                     <i class="fa-solid fa-box-open fa-3x mb-3 text-secondary"></i>
@@ -337,6 +351,7 @@
     const itemCount = document.getElementById('itemCount');
     const primaryDefect = document.getElementById('primaryDefect');
     const itemListContainer = document.getElementById('itemListContainer');
+    const activeLearningBadge = document.getElementById('activeLearningBadge');
 
     const mandiSelect = document.getElementById('mandiSelect');
     const trendBadge = document.getElementById('trendBadge');
@@ -477,6 +492,11 @@
         emptyState.classList.add('d-none');
         resultsContent.classList.remove('d-none');
 
+        if (data.active_learning_status) {
+            activeLearningBadge.classList.remove('d-none');
+            activeLearningBadge.innerHTML = `<i class="fa-solid fa-brain me-1 text-warning"></i> ${data.active_learning_status}`;
+        }
+
         if (data.annotated_image_base64) {
             annotatedOverlay.src = 'data:image/jpeg;base64,' + data.annotated_image_base64;
         }
@@ -554,24 +574,19 @@
             let onionPixelCount = 0;
             let humanSkinCount = 0;
 
-            // Sample every 16th pixel for high speed
             for (let i = 0; i < data.length; i += 16) {
                 const r = data[i];
                 const g = data[i + 1];
                 const b = data[i + 2];
 
-                // Detect Human Skin (R > G > B, typical skin tones)
                 const isSkin = (r > 130 && g > 80 && g < 160 && b > 50 && b < 130 && r > g && g > b && (r - g) > 15);
                 if (isSkin) {
                     humanSkinCount++;
                     continue;
                 }
 
-                // Glossy Red/Purple Onion (High Red, lower Green)
                 const isRedOnion = (r > 130 && r > g + 40 && r > b + 25);
-                // Yellow/Golden Onion (High Red & Green, low Blue)
                 const isYellowOnion = (r > 140 && g > 100 && b < 90 && (r - g) < 55 && (r - b) > 50);
-                // White/Ivory Onion (High Brightness, low color diff)
                 const isWhiteOnion = (r > 190 && g > 190 && b > 190 && Math.abs(r - g) < 15 && Math.abs(r - b) < 15);
 
                 if (isRedOnion || isYellowOnion || isWhiteOnion) {
@@ -583,7 +598,6 @@
             const skinRatio = humanSkinCount / totalSampled;
             const produceRatio = onionPixelCount / totalSampled;
 
-            // Reject if human skin dominates (> 25% of frame)
             if (skinRatio > 0.25) return false;
 
             return produceRatio > 0.16;
@@ -607,7 +621,6 @@
                 webcamBtn.className = "btn btn-danger w-100 mb-2 fw-bold";
                 webcamBtn.innerHTML = '<i class="fa-solid fa-power-off me-2"></i> Stop Live Auto-Detect Camera';
 
-                // Start continuous live stream detection loop (checks every 300ms)
                 autoDetectInterval = setInterval(async () => {
                     const now = Date.now();
                     if (isProcessingFrame || (now - lastAutoCaptureTime < 1500)) return;
@@ -642,7 +655,6 @@
                 alert("Camera access denied or unavailable: " + err.message);
             }
         } else {
-            // Stop camera and detection loop
             if (autoDetectInterval) clearInterval(autoDetectInterval);
             if (stream) stream.getTracks().forEach(track => track.stop());
             stream = null;

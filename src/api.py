@@ -15,8 +15,8 @@ from src.market_analytics import MandiPricePredictor
 
 app = FastAPI(
     title="AGMARK Compliant High-Speed Onion Quality Assessment Engine",
-    description="Ultra-Fast Computer Vision & Quality Analytics API for Agricultural Produce (Onions). Optimized for 24/7 Cloud Hosting.",
-    version="3.0.0"
+    description="Ultra-Fast Computer Vision & Quality Analytics API for Agricultural Produce (Onions). Equipped with Active Learning Online Retraining.",
+    version="3.1.0"
 )
 
 detector = OnionDetectorStub()
@@ -61,6 +61,7 @@ class ComprehensiveGradingResponse(BaseModel):
     average_diameter_mm: float
     estimated_mandi_price_inr: float
     price_source_info: str
+    active_learning_status: str = "Active Learning Idle"
     annotated_image_base64: Optional[str] = None
     results: List[AGMARKItemResult]
 
@@ -87,11 +88,9 @@ def get_market_trends(mandi_name: str = "Lasalgaon (Nashik, MH)"):
 @app.post("/grade_image", response_model=ComprehensiveGradingResponse)
 async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, mandi_name: str = "Lasalgaon (Nashik, MH)"):
     """
-    Ultra-Fast Computer Vision & AGMARK Grading Pipeline:
-    Downscales large 4K / HD images to 800px for 8x faster processing (under 80ms latency on free cloud tiers like Render).
-    Encodes annotated output as compressed JPEG (15ms).
+    Ultra-Fast Computer Vision & AGMARK Grading Pipeline with Active Learning:
+    Automatically logs user image features and retrains the AI model online for continuously improving accuracy.
     """
-    # Safe float conversion for pixels_per_mm
     try:
         pixels_per_mm_val = float(pixels_per_mm)
         if pixels_per_mm_val <= 0 or np.isnan(pixels_per_mm_val):
@@ -110,6 +109,7 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
                 average_diameter_mm=0.0,
                 estimated_mandi_price_inr=0.0,
                 price_source_info=price_source,
+                active_learning_status="No produce detected to learn from",
                 annotated_image_base64=None,
                 results=[]
             )
@@ -123,6 +123,7 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
                 average_diameter_mm=0.0,
                 estimated_mandi_price_inr=0.0,
                 price_source_info=price_source,
+                active_learning_status="No produce detected to learn from",
                 annotated_image_base64=None,
                 results=[]
             )
@@ -133,32 +134,29 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
             average_diameter_mm=0.0,
             estimated_mandi_price_inr=0.0,
             price_source_info=price_source,
+            active_learning_status="No produce detected to learn from",
             annotated_image_base64=None,
             results=[]
         )
 
     try:
-        # High-Speed Optimization: Downscale image to max 800px working dimension (8x speedup)
         img, scale_factor = resize_for_fast_processing(img_raw, max_dim=800)
-        # Adjust calibration pixels_per_mm proportionally to scale factor
         adjusted_px_per_mm = pixels_per_mm_val * scale_factor
 
         market_analytics = market_predictor.get_market_analytics(mandi_name)
         today_modal_price = market_analytics.get("today_modal_price_inr", 40.0)
         price_source = f"Agmarknet Live ({mandi_name} Index - Today's Modal Price: ₹{today_modal_price}/kg)"
 
-        # 1. Fast Preprocessing
         norm_img = normalize_lighting(img)
         fg_img, mask = subtract_background(norm_img)
 
-        # 2. Fast Detection & Item Extraction
         detected_items = detector.detect_and_measure(fg_img, mask)
 
-        # 3. Defect Analysis, AGMARK Classification, and Image Annotation
         annotated_img = img.copy()
         grading_results = []
         total_diam = 0.0
         prices = []
+        retrained_online = False
 
         local_classifier = OnionAGMARKClassifier(pixels_per_mm=adjusted_px_per_mm)
         img_h, img_w = img.shape[:2]
@@ -180,6 +178,19 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
             defect_data = analyze_onion_defects(img, item_mask)
             class_res = local_classifier.classify_onion(pixel_area, max_diam_px, defect_data, today_mandi_modal_price=today_modal_price)
             grade = class_res["grade"]
+
+            # Active Learning Feedback: Log user image sample into AI model dataset & trigger online retraining
+            was_retrained = local_classifier.ai_model.log_user_sample_and_retrain(
+                diam_mm=class_res["metrics"]["diameter_mm"],
+                area_cm2=class_res["metrics"]["area_cm2"],
+                rot_pct=defect_data["rot_percentage"],
+                sprout_pct=defect_data["sprout_percentage"],
+                color_score=defect_data["color_score"],
+                defect_pct=defect_data["defect_percentage"],
+                assigned_grade=grade
+            )
+            if was_retrained:
+                retrained_online = True
 
             color_map = {
                 "Grade A": (0, 220, 0),        # Bright Green
@@ -216,18 +227,24 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
                 )
             ))
 
-        # Ultra-Fast JPEG encoding (15ms vs 300ms PNG)
         _, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
         annotated_b64 = base64.b64encode(buffer).decode('utf-8')
 
         items_cnt = len(grading_results)
+        learned_count = local_classifier.ai_model.user_samples_count
 
         if items_cnt == 0:
             overall_grade = "No Produce Detected"
             avg_diam = 0.0
             avg_price = 0.0
+            learning_msg = f"Active Learning Idle (Total Learned: {learned_count})"
         else:
             avg_diam = round(total_diam / items_cnt, 1)
+
+            if retrained_online:
+                learning_msg = f"⚡ Active Learning: AI Model Retrained Online Live! (Total Samples Learned: {learned_count})"
+            else:
+                learning_msg = f"🧠 Active Learning: Logged User Image to AI Memory (Total Samples Learned: {learned_count})"
 
             grades_list = [r.grade for r in grading_results]
             reject_count = grades_list.count("Reject")
@@ -263,6 +280,7 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
             average_diameter_mm=avg_diam,
             estimated_mandi_price_inr=avg_price,
             price_source_info=price_source,
+            active_learning_status=learning_msg,
             annotated_image_base64=annotated_b64,
             results=grading_results
         )
@@ -274,22 +292,23 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
             average_diameter_mm=0.0,
             estimated_mandi_price_inr=0.0,
             price_source_info=price_source,
+            active_learning_status="Active Learning Idle",
             annotated_image_base64=None,
             results=[]
         )
 
 
 if __name__ == "__main__":
-    print("Testing Ultra-Fast 80ms Image Grading Pipeline...")
+    print("Testing Active Learning API Endpoint...")
     from fastapi.testclient import TestClient
     client = TestClient(app)
 
-    dummy_4k = np.zeros((2160, 3840, 3), dtype=np.uint8)
-    cv2.circle(dummy_4k, (1920, 1080), 400, (40, 60, 180), -1)
-    _, img_bytes = cv2.imencode('.png', dummy_4k)
+    dummy = np.zeros((400, 400, 3), dtype=np.uint8)
+    cv2.circle(dummy, (200, 200), 70, (30, 20, 180), -1)
+    _, img_bytes = cv2.imencode('.png', dummy)
 
-    res = client.post("/grade_image?pixels_per_mm=2.5", files={"file": ("4k_test.png", img_bytes.tobytes(), "image/png")})
+    res = client.post("/grade_image?pixels_per_mm=2.5", files={"file": ("test.png", img_bytes.tobytes(), "image/png")})
     assert res.status_code == 200
     data = res.json()
-    print("4K Image Grading Response grade:", data["overall_batch_grade"])
-    print("Ultra-Fast 80ms Image Grading Pipeline verified successfully.")
+    print("Active Learning Status:", data["active_learning_status"])
+    print("Active Learning API verified successfully.")
