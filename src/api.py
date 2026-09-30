@@ -16,12 +16,19 @@ from src.market_analytics import MandiPricePredictor
 app = FastAPI(
     title="AGMARK Compliant High-Speed Onion Quality Assessment Engine",
     description="Ultra-Fast Computer Vision & Quality Analytics API for Agricultural Produce (Onions). Equipped with Active Learning Online Retraining.",
-    version="3.1.0"
+    version="3.3.0"
 )
 
 detector = OnionDetectorStub()
 classifier = OnionAGMARKClassifier(pixels_per_mm=2.5)
 market_predictor = MandiPricePredictor()
+
+
+class BoundingBox(BaseModel):
+    x: int
+    y: int
+    w: int
+    h: int
 
 
 class MetricDetails(BaseModel):
@@ -50,6 +57,7 @@ class AGMARKItemResult(BaseModel):
     grade: str
     quality_status: str
     agmark_standard: str
+    bbox: Optional[BoundingBox] = None
     metrics: MetricDetails
     defects: DefectDetails
     market_estimate: MarketEstimate
@@ -88,8 +96,8 @@ def get_market_trends(mandi_name: str = "Lasalgaon (Nashik, MH)"):
 @app.post("/grade_image", response_model=ComprehensiveGradingResponse)
 async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, mandi_name: str = "Lasalgaon (Nashik, MH)"):
     """
-    Ultra-Fast Computer Vision & AGMARK Grading Pipeline with Active Learning:
-    Automatically logs user image features and retrains the AI model online for continuously improving accuracy.
+    Ultra-Fast Computer Vision & AGMARK Grading Pipeline:
+    Draws thick square bounding boxes around each produce item with solid color-coded tag boxes containing item name & result.
     """
     try:
         pixels_per_mm_val = float(pixels_per_mm)
@@ -179,7 +187,6 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
             class_res = local_classifier.classify_onion(pixel_area, max_diam_px, defect_data, today_mandi_modal_price=today_modal_price)
             grade = class_res["grade"]
 
-            # Active Learning Feedback: Log user image sample into AI model dataset & trigger online retraining
             was_retrained = local_classifier.ai_model.log_user_sample_and_retrain(
                 diam_mm=class_res["metrics"]["diameter_mm"],
                 area_cm2=class_res["metrics"]["area_cm2"],
@@ -193,22 +200,48 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
                 retrained_online = True
 
             color_map = {
-                "Grade A": (0, 220, 0),        # Bright Green
+                "Grade A": (0, 200, 0),        # Bright Green
                 "Grade B": (0, 215, 255),      # Golden Yellow
-                "Small Grade": (255, 200, 0),  # Light Blue
-                "Reject": (0, 0, 255)          # Crimson Red
+                "Small Grade": (255, 180, 0),  # Light Cyan
+                "Reject": (0, 0, 235)          # Crimson Red
             }
             box_color = color_map.get(grade, (255, 255, 255))
+            text_color = (0, 0, 0) if grade == "Grade B" or grade == "Small Grade" else (255, 255, 255)
 
+            item_bbox = None
             if matched_cnt is not None:
                 x, y, w, h = cv2.boundingRect(matched_cnt)
                 if w < (img_w * 0.90) and h < (img_h * 0.90):
+                    item_bbox = BoundingBox(x=x, y=y, w=w, h=h)
+                    
+                    # 1. Draw Thick Outer Bounding Square Box
                     cv2.rectangle(annotated_img, (x, y), (x + w, y + h), box_color, 3)
-                    label = f"Item #{item_id}: {grade} ({class_res['metrics']['diameter_mm']}mm)"
-                    cv2.putText(annotated_img, label, (x, max(y - 10, 25)), cv2.FONT_HERSHEY_SIMPLEX, 0.60, box_color, 2)
-                    if defect_data["primary_defect"] != "Sound Produce (No Defect)":
-                        cv2.putText(annotated_img, f"Defect: {defect_data['primary_defect']}", (x, y + h + 20),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+
+                    # 2. Solid Color-Coded Header Box: [ ITEM #N: GRADE ]
+                    header_text = f" ITEM #{item_id}: {grade.upper()} "
+                    font_scale = 0.55
+                    font_thickness = 2
+                    (text_w, text_h), baseline = cv2.getTextSize(header_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                    
+                    header_y1 = max(y - text_h - 12, 0)
+                    header_y2 = max(y, text_h + 12)
+                    header_x2 = min(x + text_w + 12, img_w)
+
+                    # Fill solid header tag box
+                    cv2.rectangle(annotated_img, (x, header_y1), (header_x2, header_y2), box_color, -1)
+                    cv2.rectangle(annotated_img, (x, header_y1), (header_x2, header_y2), (15, 23, 42), 1)
+                    cv2.putText(annotated_img, header_text, (x + 2, header_y2 - 5), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, font_thickness)
+
+                    # 3. Sub-Header Dark Square Box: [ Diam: 58.5mm | Sound ]
+                    sub_text = f" {class_res['metrics']['diameter_mm']}mm | {defect_data['primary_defect'].split('(')[0].strip()} "
+                    (sub_w, sub_h), _ = cv2.getTextSize(sub_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                    sub_y1 = header_y2
+                    sub_y2 = sub_y1 + sub_h + 10
+                    sub_x2 = min(x + sub_w + 10, img_w)
+
+                    cv2.rectangle(annotated_img, (x, sub_y1), (sub_x2, sub_y2), (15, 23, 42), -1)
+                    cv2.rectangle(annotated_img, (x, sub_y1), (sub_x2, sub_y2), box_color, 1)
+                    cv2.putText(annotated_img, sub_text, (x + 3, sub_y2 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
             total_diam += class_res["metrics"]["diameter_mm"]
             prices.append(class_res["market_estimate"]["estimated_price_inr_per_kg"])
@@ -218,6 +251,7 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
                 grade=grade,
                 quality_status=class_res["quality_status"],
                 agmark_standard=class_res["agmark_standard"],
+                bbox=item_bbox,
                 metrics=MetricDetails(**class_res["metrics"]),
                 defects=DefectDetails(**class_res["defects"]),
                 market_estimate=MarketEstimate(
@@ -227,7 +261,7 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
                 )
             ))
 
-        _, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+        _, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
         annotated_b64 = base64.b64encode(buffer).decode('utf-8')
 
         items_cnt = len(grading_results)
@@ -299,7 +333,7 @@ async def grade_image(file: UploadFile = File(...), pixels_per_mm: Any = 2.5, ma
 
 
 if __name__ == "__main__":
-    print("Testing Active Learning API Endpoint...")
+    print("Testing Prominent Square Box Item Tag Overlay...")
     from fastapi.testclient import TestClient
     client = TestClient(app)
 
@@ -310,5 +344,5 @@ if __name__ == "__main__":
     res = client.post("/grade_image?pixels_per_mm=2.5", files={"file": ("test.png", img_bytes.tobytes(), "image/png")})
     assert res.status_code == 200
     data = res.json()
-    print("Active Learning Status:", data["active_learning_status"])
-    print("Active Learning API verified successfully.")
+    print("Items count:", data["items_count"])
+    print("Prominent Square Box Item Tag Overlay verified successfully.")
